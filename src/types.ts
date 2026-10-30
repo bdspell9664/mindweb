@@ -112,4 +112,4 @@ export interface LogEntry {
   parsed: ParsedLog;
 }
 
-export type ViewMode = 'graph' | 'compose' | 'settings';
+export type ViewMode = 'graph' | 'list' | 'compose' | 'settings';

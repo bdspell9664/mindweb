@@ -3,6 +3,7 @@ import { store, useStore } from './store';
 import { graphDateRange, selectView } from './lib/graph';
 import FilterBar from './components/FilterBar';
 import GraphView from './components/GraphView';
+import ListView from './components/ListView';
 import Timeline from './components/Timeline';
 import NodeDetail from './components/NodeDetail';
 import ComposeView from './components/ComposeView';
@@ -50,24 +51,25 @@ export default function App() {
 
       <div className="stage">
         {state.mode === 'graph' && (
-          <>
-            <GraphView
-              view={view}
-              selectedId={state.selectedId}
-              onSelect={(id) => store.select(id)}
-              ripple={state.ripple}
-              totalNodes={nodeCount}
-            />
-            {selected && (
-              <NodeDetail
-                node={selected}
-                graph={state.graph}
-                onClose={() => store.select(null)}
-                onSelect={(id) => store.select(id)}
-                onAchieve={(id) => void store.achieve(id)}
-              />
-            )}
-          </>
+          <GraphView
+            view={view}
+            selectedId={state.selectedId}
+            onSelect={(id) => store.select(id)}
+            ripple={state.ripple}
+            totalNodes={nodeCount}
+          />
+        )}
+
+        {state.mode === 'list' && <ListView onSelect={(id) => store.select(id)} />}
+
+        {(state.mode === 'graph' || state.mode === 'list') && selected && (
+          <NodeDetail
+            node={selected}
+            graph={state.graph}
+            onClose={() => store.select(null)}
+            onSelect={(id) => store.select(id)}
+            onAchieve={(id) => void store.achieve(id)}
+          />
         )}
 
         {state.mode === 'compose' && <ComposeView />}

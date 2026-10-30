@@ -46,6 +46,13 @@ export default function FilterBar({
         </button>
         <button
           type="button"
+          className={mode === 'list' ? 'is-active' : ''}
+          onClick={() => onMode('list')}
+        >
+          列表
+        </button>
+        <button
+          type="button"
           className={mode === 'compose' ? 'is-active' : ''}
           onClick={() => onMode('compose')}
         >
