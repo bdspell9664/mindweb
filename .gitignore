@@ -1,0 +1,13 @@
+node_modules/
+
+# 工作流工具的本地状态
+.reasonix/
+dist/
+.vite/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+

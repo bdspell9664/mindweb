@@ -1,0 +1,44 @@
+# 手动触发：把 dist 部署到 GitHub Pages。
+# 前提是在仓库 Settings → Pages → Source 里选 "GitHub Actions"。
+#
+# 注意：Pages 上的数据存在「你的用户名.github.io」这个地址下，
+# 和本地 localhost 是两个互不相通的数据库。换地方用之前，
+# 先在「设置 → 备份与迁移」导出一份 .json。
+name: Deploy to GitHub Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run fix:native
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

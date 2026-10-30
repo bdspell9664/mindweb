@@ -1,0 +1,17 @@
+# 源码统一用 LF
+* text=auto eol=lf
+
+# Windows 批处理必须保持原样：GBK 编码 + CRLF 行尾。
+# 一旦被 git 转换行尾，双击就会报“命令语法不正确”。
+*.bat -text
+*.cmd -text
+
+# 二进制
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.node binary
