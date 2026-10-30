@@ -10,11 +10,11 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install
@@ -23,6 +23,7 @@ jobs:
       # npm 在个别版本上会漏装原生二进制（npm/cli#4828），
       # 这一步会自动补齐；没缺东西时它什么也不做。
       - name: Ensure native binaries
+        continue-on-error: true
         run: npm run fix:native
 
       - name: Typecheck

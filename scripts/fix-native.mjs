@@ -15,6 +15,9 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const hosts = ['rolldown', 'lightningcss', 'typescript'];
 const platformTag = `-${process.platform}-${process.arch}`;
+// glibc 与 musl 是两套变体，npm 只会装其中一套。
+// 不区分的话会把另一套当成"缺失"，进而去装一个平台不兼容的包而失败。
+const isMusl = process.platform === 'linux' && existsSync('/etc/alpine-release');
 
 function installed(name) {
   return existsSync(path.join(root, 'node_modules', ...name.split('/'), 'package.json'));
@@ -27,6 +30,8 @@ for (const host of hosts) {
   const optional = JSON.parse(readFileSync(pkgPath, 'utf8')).optionalDependencies ?? {};
   for (const [name, version] of Object.entries(optional)) {
     if (!name.includes(platformTag)) continue;
+    if (name.includes('-musl') && !isMusl) continue;
+    if (name.includes('-gnu') && isMusl) continue;
     if (!installed(name)) missing.push(`${name}@${version}`);
   }
 }
