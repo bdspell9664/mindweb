@@ -64,18 +64,64 @@ export default function GraphView({ view, selectedId, onSelect, ripple, totalNod
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const linksSelRef = useRef<d3.Selection<SVGLineElement, SimLink, SVGGElement, unknown> | null>(null);
+  const nodesSelRef = useRef<d3.Selection<SVGGElement, SimNode, SVGGElement, unknown> | null>(null);
+
+
+  /**
+   * 选中态只是"改样式"：点节点不该让整张图重新布局。
+   * 这里直接操作已经 join 好的 selection，不触发 simulation。
+   */
+  const applySelection = (sid: string | null) => {
+    const nodeSel = nodesSelRef.current;
+    if (!nodeSel) return;
+
+    const neighborIds = new Set<string>();
+    if (sid) {
+      neighborIds.add(sid);
+      for (const l of viewRef.current.links) {
+        if (l.source === sid) neighborIds.add(l.target);
+        if (l.target === sid) neighborIds.add(l.source);
+      }
+    }
+
+    nodeSel
+      .classed('is-dim', (d) => d.dimmed || (Boolean(sid) && !neighborIds.has(d.id)))
+      .classed('is-selected', (d) => d.id === sid);
+
+    nodeSel
+      .select<SVGTextElement>('text.node-label')
+      .attr('display', (d) => (shouldLabel(d.node) || d.id === sid ? null : 'none'))
+      .attr('class', (d) => `node-label ${d.id === sid ? 'is-strong' : ''}`);
+
+    linksSelRef.current?.attr('stroke-opacity', (d) => {
+      if (d.dimmed) return d.opacity * 0.12;
+      if (!sid) return d.opacity * 0.75;
+      return d.source === sid || d.target === sid
+        ? Math.min(1, d.opacity + 0.25)
+        : d.opacity * 0.22;
+    });
+  };
 
   // 尺寸跟随容器
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const observer = new ResizeObserver(() => {
+    const measure = () => {
       const rect = el.getBoundingClientRect();
-      setSize({ w: rect.width, h: rect.height });
-    });
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      // 值没变就别 setState：手机上地址栏收放、滚动条出现都会触发 ResizeObserver，
+      // 每次新建对象会让下面的布局 effect 白跑一遍，画面就抖
+      setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+    };
+    const observer = new ResizeObserver(measure);
     observer.observe(el);
-    const rect = el.getBoundingClientRect();
-    setSize({ w: rect.width, h: rect.height });
+    measure();
     return () => observer.disconnect();
   }, []);
 
@@ -145,11 +191,34 @@ export default function GraphView({ view, selectedId, onSelect, ripple, totalNod
     const gLinks = root.select<SVGGElement>('g.links');
     const gNodes = root.select<SVGGElement>('g.nodes');
 
-    // 窗口尺寸变了（手机旋转、拖动窗口）：旧坐标已经没有意义，重新布局
+    // 只有尺寸真的换了一个量级（横竖屏切换、桌面↔手机）才丢掉旧坐标重新布局。
+    // 手机上地址栏收起只会让高度变 ~10%，那种程度应该让布局温和地收敛过去，而不是重排。
     const prev = prevSize.current;
-    if (prev.w > 0 && (Math.abs(prev.w - size.w) > 40 || Math.abs(prev.h - size.h) > 40)) {
-      positions.current.clear();
-      fitted.current = false;
+    let softResize = false;
+    if (prev.w > 0) {
+      const wJump = Math.abs(prev.w - size.w) / Math.max(prev.w, 1);
+      const hJump = Math.abs(prev.h - size.h) / Math.max(prev.h, 1);
+      if (wJump > 0.35 || hJump > 0.35) {
+        // 横竖屏切换 / 桌面↔手机：整张图重排
+        positions.current.clear();
+        fitted.current = false;
+      } else if (prev.w !== size.w || prev.h !== size.h) {
+        // 手机地址栏收放这类小变化：把坐标按容器比例一起缩放，
+        // 视觉上就是图跟着窗口收放，而不是打乱重排
+        const sx = size.w / prev.w;
+        const sy = size.h / prev.h;
+        const ocx = prev.w / 2;
+        const ocy = prev.h / 2;
+        const ncx = size.w / 2;
+        const ncy = size.h / 2;
+        for (const [id, pt] of positions.current) {
+          positions.current.set(id, {
+            x: ncx + (pt.x - ocx) * sx,
+            y: ncy + (pt.y - ocy) * sy,
+          });
+        }
+        softResize = true;
+      }
     }
     prevSize.current = size;
 
@@ -174,15 +243,6 @@ export default function GraphView({ view, selectedId, onSelect, ripple, totalNod
       dimmed: l.dimmed,
     }));
 
-    const neighborIds = new Set<string>();
-    if (selectedId) {
-      neighborIds.add(selectedId);
-      for (const l of view.links) {
-        if (l.source === selectedId) neighborIds.add(l.target);
-        if (l.target === selectedId) neighborIds.add(l.source);
-      }
-    }
-
     // ── 连线：底层实体 + 上层流动的光
     const baseLinks = gLinks
       .selectAll<SVGLineElement, SimLink>('line.link-base')
@@ -191,18 +251,14 @@ export default function GraphView({ view, selectedId, onSelect, ripple, totalNod
       .attr('class', 'link link-base')
       .attr('stroke', (d) => LINK_COLOR[d.relation])
       .attr('stroke-width', (d) => 0.5 + d.weight * 1.9)
-      .attr('stroke-opacity', (d) => {
-        if (d.dimmed) return d.opacity * 0.12;
-        if (!selectedId) return d.opacity * 0.75;
-        return d.source === selectedId || d.target === selectedId
-          ? Math.min(1, d.opacity + 0.25)
-          : d.opacity * 0.22;
-      })
+      .attr('stroke-opacity', (d) => (d.dimmed ? d.opacity * 0.12 : d.opacity * 0.75))
       .attr('marker-end', (d) => (d.relation === 'evolves' ? 'url(#arrow-evolves)' : null));
 
+    // 节点一多，流光层会让连线 DOM 翻倍，而它只是装饰：超过阈值就只留静态连线
+    const showPulse = simNodes.length <= 60;
     const pulseLinks = gLinks
       .selectAll<SVGLineElement, SimLink>('line.link-pulse')
-      .data(simLinks, (d) => d.id)
+      .data(showPulse ? simLinks : [], (d) => d.id)
       .join('line')
       .attr('class', (d) => `link link-pulse ${d.relation === 'evolves' ? 'link-evolves' : ''}`)
       .attr('stroke', (d) => LINK_COLOR[d.relation])
@@ -225,16 +281,13 @@ export default function GraphView({ view, selectedId, onSelect, ripple, totalNod
           g.append('path').attr('class', 'frost');
           g.append('path').attr('class', 'spark');
           g.append('circle').attr('class', 'ring');
+          g.append('circle').attr('class', 'hit');
           g.append('text').attr('class', 'node-label');
           return g;
         },
         (update) => update,
         (exit) => exit.remove(),
       );
-
-    nodeSel
-      .classed('is-dim', (d) => d.dimmed || (Boolean(selectedId) && !neighborIds.has(d.id)))
-      .classed('is-selected', (d) => d.id === selectedId);
 
     nodeSel.each(function (d) {
       const g = d3.select(this);
@@ -321,22 +374,27 @@ export default function GraphView({ view, selectedId, onSelect, ripple, totalNod
         .attr('stroke-width', 0.8)
         .attr('stroke-opacity', 0.5 * lum);
 
+      // 手指比鼠标粗：给一个比图形本身更大的透明命中区
+      g.select<SVGCircleElement>('circle.hit')
+        .attr('r', Math.max(R + 10, 24))
+        .attr('fill', 'transparent')
+        .attr('stroke', 'none');
+
       g.select<SVGTextElement>('text.node-label')
-        .attr('display', shouldLabel(d.node) || d.id === selectedId ? null : 'none')
+        .attr('display', shouldLabel(d.node) ? null : 'none')
         .attr('y', R + (isEvent ? 16 : 15))
-        .attr('class', `node-label ${d.id === selectedId ? 'is-strong' : ''}`)
+        .attr('class', 'node-label')
         .text(shortLabel(d.node.name));
     });
 
     nodeSel.selectAll('*').attr('pointer-events', 'none');
     nodeSel
-      .select<SVGCircleElement>('circle.core')
+      .select<SVGCircleElement>('circle.hit')
       .attr('pointer-events', 'all')
-      .attr('fill-opacity', (d) => (d.node.type === 'theme' ? 0 : undefined) as number)
       .style('cursor', 'pointer');
     nodeSel
-      .select<SVGRectElement>('rect.capsule')
-      .attr('pointer-events', (d) => (d.node.type === 'event' ? 'all' : 'none'));
+      .select<SVGCircleElement>('circle.core')
+      .attr('fill-opacity', (d) => (d.node.type === 'theme' ? 0 : undefined) as number);
 
     // ── 力导向
     // 手机屏幕小得多：斥力和连线长度按画布面积缩一缩，
@@ -367,7 +425,7 @@ export default function GraphView({ view, selectedId, onSelect, ripple, totalNod
       .force('center', d3.forceCenter(size.w / 2, size.h / 2))
       .force('x', d3.forceX(size.w / 2).strength(0.03))
       .force('y', d3.forceY(size.h / 2).strength(0.03))
-      .alpha(simNodes.length > 0 ? 0.45 : 0)
+      .alpha(simNodes.length > 0 && !softResize ? 0.45 : 0)
       .alphaDecay(0.035);
 
     simRef.current = sim;
@@ -402,9 +460,10 @@ export default function GraphView({ view, selectedId, onSelect, ripple, totalNod
       .on('click', (event: MouseEvent, d) => {
         event.stopPropagation();
         if ((d.moved ?? 0) > 4) return;
-        onSelectRef.current(d.id === selectedId ? null : d.id);
+        onSelectRef.current(d.id === selectedIdRef.current ? null : d.id);
       });
 
+    let tickNo = 0;
     sim.on('tick', () => {
       baseLinks
         .attr('x1', (d) => (d.source as SimNode).x ?? 0)
@@ -417,14 +476,36 @@ export default function GraphView({ view, selectedId, onSelect, ripple, totalNod
         .attr('x2', (d) => (d.target as SimNode).x ?? 0)
         .attr('y2', (d) => (d.target as SimNode).y ?? 0);
       nodeSel.attr('transform', (d) => `translate(${d.x ?? 0},${d.y ?? 0})`);
-      for (const n of simNodes) {
-        if (typeof n.x === 'number' && typeof n.y === 'number') {
-          positions.current.set(n.id, { x: n.x, y: n.y });
+      tickNo += 1;
+      // 位置缓存只用来在重建时恢复起点，不必每帧都写
+      if (tickNo % 6 === 0 || sim.alpha() < 0.02) {
+        for (const n of simNodes) {
+          if (typeof n.x === 'number' && typeof n.y === 'number') {
+            positions.current.set(n.id, { x: n.x, y: n.y });
+          }
         }
       }
     });
 
-    if (simNodes.length > 0) sim.tick(40);
+    nodesSelRef.current = nodeSel;
+    linksSelRef.current = baseLinks;
+    applySelection(selectedIdRef.current);
+
+    if (softResize) {
+      // 只是窗口尺寸变了：坐标已经按比例缩放好，直接落位，不跑力导向
+      const put = (sel: typeof nodeSel) =>
+        sel.attr('transform', (d) => `translate(${d.x ?? 0},${d.y ?? 0})`);
+      put(nodeSel);
+      for (const sel of [baseLinks, pulseLinks]) {
+        sel
+          .attr('x1', (d) => (d.source as SimNode).x ?? 0)
+          .attr('y1', (d) => (d.source as SimNode).y ?? 0)
+          .attr('x2', (d) => (d.target as SimNode).x ?? 0)
+          .attr('y2', (d) => (d.target as SimNode).y ?? 0);
+      }
+    } else if (simNodes.length > 0) {
+      sim.tick(40);
+    }
 
     // 第一次把图铺出来时，自动缩放到刚好填满窗口（手机上尤其必要）
     if (simNodes.length > 0 && !fitted.current) {
@@ -437,7 +518,12 @@ export default function GraphView({ view, selectedId, onSelect, ripple, totalNod
       sim.stop();
       if (simRef.current === sim) simRef.current = null;
     };
-  }, [view, size, selectedId]);
+  }, [view, size]);
+
+  // 选中/取消选中：只更新样式，完全不碰布局与 simulation
+  useEffect(() => {
+    applySelection(selectedId);
+  }, [selectedId]);
 
   // 念想实现时的一次金色涟漪
   useEffect(() => {
