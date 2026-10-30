@@ -1,4 +1,4 @@
-import type { Graph, GraphNode, NodeType, Relation } from '../types';
+import { RELATION_LABEL, type Graph, type GraphNode, type NodeType, type Relation } from '../types';
 import { clamp } from './merge';
 
 export interface ViewOptions {
@@ -190,6 +190,71 @@ export function selectView(graph: Graph, opts: ViewOptions): View {
   }
 
   return { nodes, links, range };
+}
+
+const UNDIRECTED_RELATIONS = new Set<Relation>(['involves', 'co_occurs']);
+
+/** 有向关系读成"引发 / 被引发"，无向关系两个方向读起来一样，不加"被" */
+export function relationLabelFor(relation: Relation, direction: 'out' | 'in'): string {
+  if (UNDIRECTED_RELATIONS.has(relation)) return RELATION_LABEL[relation];
+  return direction === 'out' ? RELATION_LABEL[relation] : `被${RELATION_LABEL[relation]}`;
+}
+
+export interface NeighborLink {
+  node: GraphNode;
+  relation: Relation;
+  /** out = 我指向它（如"我引发的情绪"），in = 它指向我 */
+  direction: 'out' | 'in';
+  weight: number;
+  lastDate: string;
+}
+
+export interface AdjacencyEntry {
+  links: NeighborLink[];
+  /** 相连边的权重之和：越高的节点在图里牵连得越多 */
+  weight: number;
+  /** 最近一次和任何节点产生关联的日期 */
+  lastDate: string;
+}
+
+/**
+ * 一次遍历把所有边折成邻接表。列表视图靠它回答
+ * "这个节点连着什么、牵连有多深"，不必每行再扫一遍全部边。
+ */
+export function buildAdjacency(graph: Graph): Map<string, AdjacencyEntry> {
+  const map = new Map<string, AdjacencyEntry>();
+
+  const touch = (id: string): AdjacencyEntry => {
+    let entry = map.get(id);
+    if (!entry) {
+      entry = { links: [], weight: 0, lastDate: '' };
+      map.set(id, entry);
+    }
+    return entry;
+  };
+
+  for (const e of Object.values(graph.edges)) {
+    const source = graph.nodes[e.source];
+    const target = graph.nodes[e.target];
+    if (!source || !target) continue;
+
+    const a = touch(source.id);
+    a.links.push({ node: target, relation: e.relation, direction: 'out', weight: e.weight, lastDate: e.lastDate });
+    a.weight += e.weight;
+    if (e.lastDate > a.lastDate) a.lastDate = e.lastDate;
+
+    const b = touch(target.id);
+    b.links.push({ node: source, relation: e.relation, direction: 'in', weight: e.weight, lastDate: e.lastDate });
+    b.weight += e.weight;
+    if (e.lastDate > b.lastDate) b.lastDate = e.lastDate;
+  }
+
+  for (const entry of map.values()) {
+    // 强关联在前，同权重时按最近时间
+    entry.links.sort((x, y) => y.weight - x.weight || y.lastDate.localeCompare(x.lastDate));
+  }
+
+  return map;
 }
 
 /** 节点详情：一跳关联（含方向说明），用于侧栏。 */

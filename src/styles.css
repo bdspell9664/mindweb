@@ -764,6 +764,12 @@ input[type="range"].scrub::-moz-range-thumb {
   padding: 0 22px 60px;
 }
 
+.list-view.has-detail {
+  /* 详情侧栏是盖在 stage 上的浮层，列表得自己让出这块地方，
+     否则关联数和日期会被压住 */
+  padding-right: 396px;
+}
+
 .list-toolbar {
   position: sticky;
   top: 0;
@@ -866,9 +872,62 @@ input[type="range"].scrub::-moz-range-thumb {
   border-color: var(--line-soft);
 }
 
-.list-row.is-active {
+.list-item {
+  border-radius: 10px;
+  transition: opacity 0.2s ease, background 0.16s ease;
+}
+
+/* 顶栏点了类型高亮时，其它类型在列表里也一起压暗，和图谱保持一致 */
+.list-item.is-dimmed {
+  opacity: 0.36;
+}
+
+/* 选中节点的邻居：左侧一道细光，和图谱里被点亮的那些是同一批 */
+.list-item.is-related {
+  background: rgba(143, 162, 255, 0.05);
+  box-shadow: inset 2px 0 0 rgba(143, 162, 255, 0.55);
+}
+
+.list-item.is-active {
+  background: rgba(143, 162, 255, 0.08);
+}
+
+.list-item.is-active .list-row {
   background: rgba(143, 162, 255, 0.1);
   border-color: rgba(143, 162, 255, 0.3);
+}
+
+/* 展开的一跳关联 */
+.list-related {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 12px 12px 36px;
+  animation: list-expand 0.16s ease-out;
+}
+
+@keyframes list-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.list-related-empty {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.list-weight {
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.list-alone {
+  font-size: 10px;
+  color: var(--ink-faint);
+  opacity: 0.75;
 }
 
 .list-dot {
@@ -1214,7 +1273,7 @@ input[type="range"].scrub::-moz-range-thumb {
     left: 0;
     width: 100%;
     max-width: none;
-    height: 62dvh;
+    height: 56dvh;
     border-left: 0;
     border-top: 1px solid var(--line);
     border-radius: 18px 18px 0 0;
@@ -1256,7 +1315,8 @@ input[type="range"].scrub::-moz-range-thumb {
     padding: 22px 16px 48px;
   }
 
-  .list-view {
+  .list-view,
+  .list-view.has-detail {
     padding: 0 10px 40px;
   }
 

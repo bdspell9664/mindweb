@@ -1,5 +1,5 @@
-import { RELATION_LABEL, TYPE_LABEL, type Graph, type GraphNode, type NodeType } from '../types';
-import { colorOf, neighborsOf } from '../lib/graph';
+import { TYPE_LABEL, type Graph, type GraphNode, type NodeType } from '../types';
+import { colorOf, neighborsOf, relationLabelFor } from '../lib/graph';
 import RiskCare from './RiskCare';
 
 interface Props {
@@ -153,9 +153,7 @@ export default function NodeDetail({ node, graph, onClose, onSelect, onAchieve }
               >
                 <span className="dot" style={{ width: 6, height: 6, borderRadius: 99, background: colorOf(other) }} />
                 {other.name.length > 12 ? `${other.name.slice(0, 12)}…` : other.name}
-                <span className="rel">
-                  {direction === 'out' ? RELATION_LABEL[relation] : `被${RELATION_LABEL[relation]}`}
-                </span>
+                <span className="rel">{relationLabelFor(relation, direction)}</span>
               </button>
             ))}
           </div>

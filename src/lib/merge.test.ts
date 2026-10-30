@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildGraph, nodeIdFor, parseRef } from './merge';
-import { colorOf, dayDiff, radiusOf, selectView } from './graph';
+import { buildAdjacency, colorOf, dayDiff, radiusOf, selectView } from './graph';
 import type { LogEntry, NodeType, ParsedLog } from '../types';
 
 function entry(date: string, parsed: Partial<ParsedLog>, id = date): LogEntry {
@@ -186,6 +186,62 @@ describe('演变边', () => {
       }),
     ]);
     expect(Object.values(graph.edges).filter((e) => e.relation === 'evolves')).toHaveLength(0);
+  });
+});
+
+describe('邻接表（列表视图的关联数据）', () => {
+  const graph = buildGraph([
+    entry('2024-05-01', {
+      nodes: [
+        { type: 'person', name: '妈妈' },
+        { type: 'emotion', name: '愧疚', polarity: -3, intensity: 3 },
+        { type: 'theme', name: '家庭接纳' },
+      ],
+      edges: [
+        { source: 'emotion:愧疚', target: 'person:妈妈', relation: 'involves', weight: 0.4 },
+        { source: 'emotion:愧疚', target: 'theme:家庭接纳', relation: 'belongs_to', weight: 0.9 },
+      ],
+    }),
+    entry('2024-06-01', {
+      nodes: [
+        { type: 'person', name: '妈妈' },
+        { type: 'emotion', name: '愧疚', polarity: -2, intensity: 2 },
+      ],
+      edges: [{ source: 'emotion:愧疚', target: 'person:妈妈', relation: 'involves', weight: 0.6 }],
+    }),
+  ]);
+
+  it('一条边在两个端点上各记一次，方向相反', () => {
+    const adj = buildAdjacency(graph);
+    const guilt = adj.get('emotion:愧疚')!;
+    const mom = adj.get('person:妈妈')!;
+
+    expect(guilt.links).toHaveLength(2);
+    expect(mom.links).toHaveLength(1);
+
+    const toMom = guilt.links.find((l) => l.node.name === '妈妈')!;
+    expect(toMom.direction).toBe('out');
+    expect(mom.links[0].direction).toBe('in');
+    expect(mom.links[0].node.name).toBe('愧疚');
+  });
+
+  it('权重是相连边之和，邻居按权重降序', () => {
+    const guilt = buildAdjacency(graph).get('emotion:愧疚')!;
+    // 0.5（两天的 involves 平均）+ 0.9（belongs_to）
+    expect(guilt.weight).toBeCloseTo(1.4, 5);
+    expect(guilt.links[0].node.name).toBe('家庭接纳'); // 0.9 > 0.5
+    expect(guilt.links[1].node.name).toBe('妈妈');
+  });
+
+  it('lastDate 取相连边里最新的一次', () => {
+    const mom = buildAdjacency(graph).get('person:妈妈')!;
+    expect(mom.lastDate).toBe('2024-06-01');
+  });
+
+  it('没有任何边的节点不出现在邻接表里', () => {
+    const lonely = buildGraph([entry('2024-07-01', { nodes: [{ type: 'wish', name: '去应天门' }] })]);
+    expect(buildAdjacency(lonely).get('wish:去应天门')).toBeUndefined();
+    expect(buildAdjacency(lonely).size).toBe(0);
   });
 });
 
