@@ -64,6 +64,47 @@ npm run fix:native
 
 它按当前平台从已经装好的包里找出缺的那几个补进 `node_modules`，不改 package.json。
 
+## 账号与云同步（Cloudflare）
+
+不登录也能用，数据只在本机。登录后切到云端模式，换设备能看到。
+
+```
+浏览器 ──fetch──▶ Cloudflare Worker（API + 静态资源）──▶ D1（SQLite）
+```
+
+Worker 同时托管前端产物，前后端同源——不用处理 CORS，Cookie 也不用跨域。
+
+### 首次部署
+
+```bash
+npm install
+npx wrangler login            # 浏览器授权你的 Cloudflare 账号
+
+npx wrangler d1 create mindweb   # 把输出的 database_id 填进 wrangler.toml
+npm run worker:schema            # 建表
+npm run deploy                   # 构建前端 + 部署（Worker 同时托管 dist）
+```
+
+部署完会得到 `https://mindweb.<你的子域>.workers.dev`，账号系统就在那儿生效。
+免费额度对个人使用绰绰有余（Workers 每天 10 万请求，D1 5GB 存储）。
+
+### 本地开发账号功能
+
+```bash
+npx wrangler d1 execute mindweb --local --file=worker/schema.sql
+npm run worker:dev            # Worker 起在 8787，同时托管 dist
+```
+
+`http://localhost:8787` 是带后端的完整版。日常改前端仍用 `npm run dev`（5173），
+那个地址没有 `/api`，会自动退回纯本地模式。
+
+### 迁移与密码
+
+第一次登录时，这台设备上已有的本地日志会**整批搬上云**（云端已有的日期不覆盖）。
+之后以云端为准，本机只做缓存。
+
+密码目前**没有找回流程**——忘了就进不去，请自己记好。
+
 ## 手机上用
 
 界面按手机尺寸调过：顶栏两行（标签那行横向滑动）、详情从底部弹出、时间轴滑块加大到
@@ -109,12 +150,22 @@ npm run dev -- --host
 里的 `deriveEvolvesEdges`）。所以当图上出现一条从「认定这条路是错的」指向「妈妈同意买女装」的
 金色虚线时，那就是这几个月里真实发生的松动。
 
-## 数据存在哪、怎么不丢
+## 数据存在哪
 
-- 日志原文、解析结果 → IndexedDB（`mindweb-db`），不支持时退回 localStorage
-- API key → localStorage（`mindweb.llm`）
-- 无账号、无云同步、无遥测
-- 只有当天那段日志文本会发给你配置的模型；请求从浏览器直连，不经过任何中间服务
+心络有两种运行方式，数据落点不同：
+
+**本地模式（默认，不登录）**
+- 日志原文与解析结果 → IndexedDB（`mindweb-db`），不支持时退回 localStorage
+- 不上传任何地方，也不发任何遥测
+
+**云端模式（登录后）**
+- 日志原文与解析结果 → Cloudflare D1；本机 IndexedDB 退化成缓存
+- 密码是 PBKDF2-SHA256 加盐哈希，会话是 httpOnly Cookie
+- 换设备登录同一个邮箱就能看到
+
+两种模式下都一样：
+- API key → 只进本机 localStorage（`mindweb.llm`），**不上传**
+- 只有当天那段日志文本会发给你自己配置的模型，请求从浏览器直连
 
 **浏览器按地址隔离存储。** `http://localhost:5173`、`http://localhost:5174`、
 `http://127.0.0.1:5173`、以及另一个浏览器，是四个互不相通的数据库。
@@ -135,6 +186,7 @@ npm run dev -- --host
    搜索同时匹配节点名和原文摘录，点一行就开详情
 5. 节点详情侧栏：含义、出现次数、强度趋势折线、带日期的原文摘录、一跳关联
 6. 时间回放：拖动或自动播放，图谱按日期生长，旧连接保留但渐暗
+7. 可选账号：本地模式随时可用；登录后同步到 Cloudflare D1，换设备可见（密码 PBKDF2 加盐、会话 httpOnly）
 
 危险念头（`risk_node`）的详情栏底部常驻求助区块：全国心理援助热线 **12356**、
 北京心理危机干预中心 **010-82951332**。没有红色弹窗，没有评分，没有排名。

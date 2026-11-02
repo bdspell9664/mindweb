@@ -26,8 +26,11 @@ jobs:
         continue-on-error: true
         run: npm run fix:native
 
-      - name: Typecheck
+      - name: Typecheck (frontend)
         run: npm run typecheck
+
+      - name: Typecheck (worker)
+        run: npm run typecheck:worker
 
       - name: Test
         run: npm test

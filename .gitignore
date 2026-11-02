@@ -4,6 +4,7 @@ node_modules/
 .reasonix/
 dist/
 .vite/
+.wrangler/
 *.log
 
 # OS

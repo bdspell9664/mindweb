@@ -1,0 +1,18 @@
+name = "mindweb"
+main = "worker/src/index.ts"
+compatibility_date = "2025-06-01"
+
+# Worker 同时托管前端静态资源：前后端同源，不用处理 CORS 与跨域 Cookie。
+# 部署前先 npm run build，把产物放进 ./dist。
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mindweb"
+database_id = "PLACEHOLDER"
+
+[observability]
+enabled = true

@@ -7,7 +7,7 @@
  * 不改动 package.json 与 package-lock.json —— 所以仓库保持跨平台干净，
  * 而 Windows 上遇到这个 npm bug 的人跑一次 `npm run fix:native` 就好。
  */
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,16 +44,18 @@ if (missing.length === 0) {
 console.log('[fix-native] 补装缺失的原生二进制：');
 for (const item of missing) console.log('  -', item);
 
-try {
-  execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
-    'install',
-    '--no-save',
-    '--ignore-scripts',
-    ...missing,
-  ], { stdio: 'inherit', cwd: root });
-  console.log('[fix-native] 完成。再跑一次 npm run build 应该就正常了。');
-} catch {
+// Windows 上 execFileSync 直接调 npm.cmd 会 EINVAL（Node 18+ 的安全限制），
+// 必须给 shell: true，否则这个脚本在这里永远是坏的。
+const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const result = spawnSync(
+  npmBin,
+  ['install', '--no-save', '--ignore-scripts', ...missing],
+  { stdio: 'inherit', cwd: root, shell: process.platform === 'win32' },
+);
+
+if (result.status !== 0) {
   console.error('[fix-native] 自动补装失败。请手动执行：');
   console.error(`  npm install --no-save ${missing.join(' ')}`);
   process.exit(1);
 }
+console.log('[fix-native] 完成。再跑一次 npm run build 应该就正常了。');

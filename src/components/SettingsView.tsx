@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { store, useStore } from '../store';
+import AuthPanel from './AuthPanel';
 import { DEFAULT_SETTINGS, type LlmSettings, type Provider } from '../lib/settings';
 
 const PRESETS: Record<Provider, { baseUrl: string; model: string; hint: string }> = {
@@ -49,9 +50,11 @@ export default function SettingsView() {
       <div className="pane-inner">
         <h1>设置</h1>
         <p className="lede">
-          心络没有后端。解析用的模型由你自己提供，key 只写进这台设备的 localStorage，
-          请求从浏览器直接发出，除了当天那段日志文本，什么都不会被带走。
+          日志可以只留在这台设备，也可以登录后同步到云端。解析用的模型由你自己提供，
+          key 只写进本机 localStorage，请求从浏览器直接发出。
         </p>
+
+        <AuthPanel />
 
         <div className="field">
           <label>接口类型</label>
@@ -136,8 +139,10 @@ export default function SettingsView() {
           本地数据
         </div>
         <p className="hint" style={{ marginTop: 0 }}>
-          目前有 {state.entries.length} 篇日志、{Object.keys(state.graph.nodes).length} 个节点，
-          全部在这台设备的 IndexedDB 里。没有账号，没有云同步，没有遥测。
+          目前有 {state.entries.length} 篇日志、{Object.keys(state.graph.nodes).length} 个节点。
+          {state.user
+            ? '已登录：以云端（Cloudflare D1）为准，本机保留一份缓存。'
+            : '全部在这台设备的 IndexedDB 里，没有上传任何地方。'}
         </p>
         <div className="row row-end">
           <button

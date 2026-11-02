@@ -10,6 +10,7 @@ import {
 } from './lib/settings';
 import { LlmError, parseEntry } from './lib/llm';
 import { parseBackup, serializeBackup } from './lib/backup';
+import { ApiUnavailable, api, type ApiUser } from './lib/api';
 import type { Graph, LogEntry, NodeType, ParsedLog, ViewMode } from './types';
 
 export interface Filters {
@@ -24,6 +25,9 @@ export interface Notice {
   text: string;
   detail?: string;
 }
+
+/** cloud = 有后端且已连上；local = 纯本地（没后端，或还没登录） */
+export type Backend = 'local' | 'cloud';
 
 export interface AppState {
   ready: boolean;
@@ -40,6 +44,10 @@ export interface AppState {
   notice: Notice | null;
   /** 每次有念想被标记实现，递增一次 —— 图谱据此泛起一次金色涟漪 */
   ripple: number;
+  /** 当前登录的账号；null 表示本地模式 */
+  user: ApiUser | null;
+  backend: Backend;
+  authBusy: boolean;
 }
 
 const EMPTY_GRAPH: Graph = { nodes: {}, edges: {} };
@@ -62,6 +70,9 @@ class Store {
     busy: false,
     notice: null,
     ripple: 0,
+    user: null,
+    backend: 'local',
+    authBusy: false,
   };
 
   private listeners = new Set<() => void>();
@@ -86,19 +97,38 @@ class Store {
   async init(): Promise<void> {
     const isFile = typeof location !== 'undefined' && location.protocol === 'file:';
     try {
-      const [entries, settings] = await Promise.all([
+      const [localEntries, settings] = await Promise.all([
         loadEntries(),
         Promise.resolve(loadSettings()),
       ]);
-      const sorted = sortEntries(entries);
+      let entries = sortEntries(localEntries);
+      let user: ApiUser | null = null;
+      let backend: Backend = 'local';
+
+      // 先问后端要会话。纯静态托管（GitHub Pages）上会失败，那就安静地留在本地模式。
+      try {
+        const me = await api.me();
+        backend = 'cloud';
+        user = me.user;
+        if (user) {
+          const remote = await api.entries();
+          entries = sortEntries(remote.entries);
+          await this.cacheEntries(entries);
+        }
+      } catch {
+        backend = 'local';
+      }
+
       this.set({
         ready: true,
-        entries: sorted,
-        graph: buildGraph(sorted),
+        entries,
+        graph: buildGraph(entries),
         settings,
-        mode: sorted.length === 0 ? 'compose' : 'graph',
+        user,
+        backend,
+        mode: entries.length === 0 ? 'compose' : 'graph',
       });
-      if (isFile && sorted.length === 0) {
+      if (isFile && entries.length === 0) {
         this.set({
           notice: {
             kind: 'error',
@@ -164,6 +194,112 @@ class Store {
     this.set({ settings, notice: { kind: 'ok', text: '已保存在这台设备上' } });
   }
 
+  // ── 账号与同步 ───────────────────────────────────────
+
+  /** 云端为准：把云端数据写进本地缓存，并清掉云端已不存在的旧缓存 */
+  private async cacheEntries(entries: LogEntry[]): Promise<void> {
+    try {
+      const keep = new Set(entries.map((e) => e.id));
+      for (const cached of await loadEntries()) {
+        if (!keep.has(cached.id)) await removeEntry(cached.id);
+      }
+      for (const entry of entries) await putEntry(entry);
+    } catch {
+      /* 缓存写失败不影响主流程 */
+    }
+  }
+
+  /** 已登录时把一篇推上云；本地已经存过了，这里只是尽力同步 */
+  private async pushEntry(entry: LogEntry): Promise<boolean> {
+    if (!this.state.user) return true;
+    try {
+      await api.saveEntry(entry);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async signUp(email: string, password: string): Promise<boolean> {
+    return this.authenticate(() => api.register(email, password));
+  }
+
+  async signIn(email: string, password: string): Promise<boolean> {
+    return this.authenticate(() => api.login(email, password));
+  }
+
+  private async authenticate(call: () => Promise<{ user: ApiUser }>): Promise<boolean> {
+    this.set({ authBusy: true, notice: null });
+    try {
+      const { user } = await call();
+      await this.afterAuth(user);
+      return true;
+    } catch (err) {
+      this.set({
+        authBusy: false,
+        notice: {
+          kind: 'error',
+          text:
+            err instanceof ApiUnavailable
+              ? '这个地址没有后端，只能本地使用。要用账号请部署到 Cloudflare。'
+              : err instanceof Error
+                ? err.message
+                : '登录失败',
+        },
+      });
+      return false;
+    }
+  }
+
+  /** 登录成功后：云端为准拉一份下来；第一次登录且云端为空时，先把本地搬上去 */
+  private async afterAuth(user: ApiUser): Promise<void> {
+    const local = this.state.entries;
+    let remote = await api.entries();
+    let uploaded = 0;
+
+    if (remote.entries.length === 0 && local.length > 0) {
+      const result = await api.sync(local);
+      uploaded = result.imported;
+      remote = await api.entries();
+    }
+
+    const entries = sortEntries(remote.entries);
+    await this.cacheEntries(entries);
+    this.set({
+      authBusy: false,
+      user,
+      backend: 'cloud',
+      entries,
+      graph: buildGraph(entries),
+      selectedId: null,
+      notice: {
+        kind: 'ok',
+        text:
+          uploaded > 0
+            ? `已登录 ${user.email}，把本地的 ${uploaded} 篇搬到了云端`
+            : `已登录 ${user.email}，共 ${entries.length} 篇日志`,
+      },
+    });
+  }
+
+  async signOut(): Promise<void> {
+    await api.logout().catch(() => {});
+    let entries: LogEntry[] = [];
+    try {
+      entries = sortEntries(await loadEntries());
+    } catch {
+      entries = [];
+    }
+    this.set({
+      user: null,
+      backend: 'local',
+      entries,
+      graph: buildGraph(entries),
+      selectedId: null,
+      notice: { kind: 'info', text: '已退出登录。本地还留着一份缓存，可以继续离线用。' },
+    });
+  }
+
   /** 录入 + 解析 + 合并 + 落盘。同一天只留一篇，再写就覆盖。 */
   async analyze(text: string, date: string): Promise<boolean> {
     const trimmed = text.trim();
@@ -186,16 +322,18 @@ class Store {
       const others = this.state.entries.filter((e) => e.date !== date);
       this.setEntries([...others, entry]);
 
+      const synced = await this.pushEntry(entry);
       const count = parsed.nodes.length;
       this.set({
         busy: false,
         mode: 'graph',
         selectedId: this.state.selectedId,
         notice: {
-          kind: 'ok',
+          kind: synced ? 'ok' : 'info',
           text: existing
             ? `这一天的日志已更新，${count} 个节点重新连回图谱`
             : `这一天的日志已经长进图谱了：${count} 个节点`,
+          ...(synced ? {} : { detail: '已经存在本地，但没能同步到云端' }),
         },
       });
       return true;
@@ -225,15 +363,21 @@ class Store {
     };
     await putEntry(entry);
     this.setEntries([...this.state.entries.filter((e) => e.date !== date), entry]);
+    const synced = await this.pushEntry(entry);
     this.set({
       mode: 'graph',
-      notice: { kind: 'ok', text: `手动导入成功：这一天有 ${parsed.nodes.length} 个节点` },
+      notice: {
+        kind: synced ? 'ok' : 'info',
+        text: `手动导入成功：这一天有 ${parsed.nodes.length} 个节点`,
+        ...(synced ? {} : { detail: '已经存在本地，但没能同步到云端' }),
+      },
     });
     return true;
   }
 
   async remove(id: string): Promise<void> {
     await removeEntry(id);
+    if (this.state.user) await api.deleteEntry(id).catch(() => {});
     this.setEntries(this.state.entries.filter((e) => e.id !== id));
     if (this.state.selectedId && !this.state.graph.nodes[this.state.selectedId]) {
       this.set({ selectedId: null });
@@ -259,6 +403,7 @@ class Store {
         const next = { ...entry, parsed: { ...entry.parsed, nodes } };
         updated.push(next);
         await putEntry(next);
+        await this.pushEntry(next);
       } else {
         updated.push(entry);
       }

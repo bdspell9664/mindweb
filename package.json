@@ -10,7 +10,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "fix:native": "node scripts/fix-native.mjs"
+    "fix:native": "node scripts/fix-native.mjs",
+    "typecheck:worker": "tsc -p worker",
+    "worker:dev": "wrangler dev",
+    "worker:schema": "wrangler d1 execute mindweb --remote --file=worker/schema.sql",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "d3": "^7.9.0",
@@ -24,6 +28,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "wrangler": "^4.156.2"
   }
 }
