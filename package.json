@@ -14,7 +14,8 @@
     "typecheck:worker": "tsc -p worker",
     "worker:dev": "wrangler dev",
     "worker:schema": "wrangler d1 execute mindweb --remote --file=worker/schema.sql",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "postinstall": "node scripts/fix-native.mjs"
   },
   "dependencies": {
     "d3": "^7.9.0",

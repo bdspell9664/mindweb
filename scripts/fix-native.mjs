@@ -4,8 +4,11 @@
  * 症状是 vite / tsc / lightningcss 报 "Cannot find native binding"。
  *
  * 这里按当前平台找出缺失的那几个，用 --no-save 补进 node_modules，
- * 不改动 package.json 与 package-lock.json —— 所以仓库保持跨平台干净，
- * 而 Windows 上遇到这个 npm bug 的人跑一次 `npm run fix:native` 就好。
+ * 不改动 package.json 与 package-lock.json —— 所以仓库保持跨平台干净。
+ *
+ * 它同时挂在 postinstall 上：npm install 之后自动补一次，省得每次装完工具就坏。
+ * 默认"软失败"（装不上只警告、退出码 0），避免因为网络问题把 npm install 整个搞挂；
+ * 需要严格模式时加 --strict。
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -56,6 +59,7 @@ const result = spawnSync(
 if (result.status !== 0) {
   console.error('[fix-native] 自动补装失败。请手动执行：');
   console.error(`  npm install --no-save ${missing.join(' ')}`);
-  process.exit(1);
+  // 默认不因为补装失败而让 npm install 整体失败
+  process.exit(process.argv.includes('--strict') ? 1 : 0);
 }
 console.log('[fix-native] 完成。再跑一次 npm run build 应该就正常了。');
