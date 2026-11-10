@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { NODE_TYPES, TYPE_LABEL, type NodeType, type ViewMode } from '../types';
-import type { Filters } from '../store';
+import type { DatePreset, Filters } from '../store';
 import { TYPE_COLOR } from '../lib/graph';
 
 interface Props {
@@ -10,11 +10,19 @@ interface Props {
   entryCount: number;
   onToggleHighlight: (type: NodeType) => void;
   onClearHighlight: () => void;
+  onPreset: (preset: DatePreset) => void;
   onRange: (from: string | null, to: string | null) => void;
   onMode: (mode: ViewMode) => void;
 }
 
 const VISIBLE_TYPES = NODE_TYPES.filter((t) => t !== 'entry');
+
+const PRESETS: { id: DatePreset; label: string; hint: string }[] = [
+  { id: 'today', label: '今天', hint: '只看今天还有动静的节点' },
+  { id: 'week', label: '近 7 天', hint: '最近 7 天（含今天）' },
+  { id: 'month', label: '近 30 天', hint: '最近 30 天（含今天）' },
+  { id: 'all', label: '全部', hint: '不限日期' },
+];
 
 export default function FilterBar({
   filters,
@@ -23,10 +31,12 @@ export default function FilterBar({
   entryCount,
   onToggleHighlight,
   onClearHighlight,
+  onPreset,
   onRange,
   onMode,
 }: Props) {
   const hasFocus = filters.highlight.size > 0;
+  const dateFiltered = Boolean(filters.from || filters.to);
 
   return (
     <header className="topbar">
@@ -98,23 +108,46 @@ export default function FilterBar({
       </div>
 
       <div className="range">
-        <input
-          type="date"
-          className="input-date"
-          value={filters.from ?? ''}
-          onChange={(e) => onRange(e.target.value || null, filters.to)}
-          aria-label="起始日期"
-        />
-        <span>→</span>
-        <input
-          type="date"
-          className="input-date"
-          value={filters.to ?? ''}
-          onChange={(e) => onRange(filters.from, e.target.value || null)}
-          aria-label="结束日期"
-        />
-        {(filters.from || filters.to) && (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onRange(null, null)}>
+        <div className="presets" role="group" aria-label="日期快捷筛选">
+          {PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className={`preset ${filters.preset === preset.id ? 'is-active' : ''}`}
+              onClick={() => onPreset(preset.id)}
+              title={preset.hint}
+              aria-pressed={filters.preset === preset.id}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
+        <span className="range-dates">
+          <input
+            type="date"
+            className="input-date"
+            value={filters.from ?? ''}
+            onChange={(e) => onRange(e.target.value || null, filters.to)}
+            aria-label="起始日期"
+          />
+          <span>→</span>
+          <input
+            type="date"
+            className="input-date"
+            value={filters.to ?? ''}
+            onChange={(e) => onRange(filters.from, e.target.value || null)}
+            aria-label="结束日期"
+          />
+        </span>
+
+        {dateFiltered && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm range-clear"
+            onClick={() => onRange(null, null)}
+            title="清除日期筛选"
+          >
             清除
           </button>
         )}

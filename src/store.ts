@@ -10,14 +10,19 @@ import {
 } from './lib/settings';
 import { LlmError, parseEntry } from './lib/llm';
 import { parseBackup, serializeBackup } from './lib/backup';
+import { lastNDaysStart, todayLocal } from './lib/dates';
 import { ApiUnavailable, api, type ApiUser } from './lib/api';
 import type { Graph, LogEntry, NodeType, ParsedLog, ViewMode } from './types';
+
+/** 日期快捷筛选；custom 表示用户自己挑了具体日期 */
+export type DatePreset = 'today' | 'week' | 'month' | 'all' | 'custom';
 
 export interface Filters {
   /** 要高亮的类型；空集表示不高亮（全部正常显示） */
   highlight: Set<NodeType>;
   from: string | null;
   to: string | null;
+  preset: DatePreset;
 }
 
 export interface Notice {
@@ -62,7 +67,7 @@ class Store {
     entries: [],
     graph: EMPTY_GRAPH,
     settings: DEFAULT_SETTINGS,
-    filters: { highlight: new Set<NodeType>(), from: null, to: null },
+    filters: { highlight: new Set<NodeType>(), from: null, to: null, preset: 'all' },
     cursor: null,
     playing: false,
     selectedId: null,
@@ -170,7 +175,24 @@ class Store {
   }
 
   setRange(from: string | null, to: string | null): void {
-    this.set({ filters: { ...this.state.filters, from, to } });
+    // 手动改日期就不再属于任何快捷预设
+    const preset: DatePreset = !from && !to ? 'all' : 'custom';
+    this.set({ filters: { ...this.state.filters, from, to, preset } });
+  }
+
+  /** 快捷日期：今天 / 近 7 天 / 近 30 天 / 全部 */
+  applyPreset(preset: DatePreset): void {
+    if (preset === 'all' || preset === 'custom') {
+      this.set({ filters: { ...this.state.filters, from: null, to: null, preset } });
+      return;
+    }
+    const from =
+      preset === 'today'
+        ? todayLocal()
+        : preset === 'week'
+          ? lastNDaysStart(7)
+          : lastNDaysStart(30);
+    this.set({ filters: { ...this.state.filters, from, to: null, preset } });
   }
 
   setCursor(cursor: string | null): void {

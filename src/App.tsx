@@ -45,6 +45,7 @@ export default function App() {
         entryCount={state.entries.length}
         onToggleHighlight={(t) => store.toggleHighlight(t)}
         onClearHighlight={() => store.clearHighlight()}
+        onPreset={(p) => store.applyPreset(p)}
         onRange={(from, to) => store.setRange(from, to)}
         onMode={(m) => store.setMode(m)}
       />

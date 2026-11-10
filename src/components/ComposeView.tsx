@@ -2,12 +2,7 @@ import { useState } from 'react';
 import { store, useStore } from '../store';
 import { extractJson, sanitizeParsed } from '../lib/parse';
 import type { ParsedLog } from '../types';
-
-function todayLocal(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+import { todayLocal } from '../lib/dates';
 
 export default function ComposeView() {
   const state = useStore();
