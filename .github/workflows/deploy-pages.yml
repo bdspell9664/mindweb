@@ -7,6 +7,12 @@
 name: Deploy to GitHub Pages
 
 on:
+  # 推到 main 就自动发布，省掉每次手动点 Run workflow
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+  # 也保留手动触发，方便只重发一次而不改代码
   workflow_dispatch:
 
 permissions:
